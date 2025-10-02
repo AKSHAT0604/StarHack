@@ -6,30 +6,15 @@ type QuestCategory = 'daily' | 'weekly' | 'monthly';
 
 const Quests: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<QuestCategory | null>(null);
-  const { addPoints } = usePoints();
-
-  const quests = {
-    daily: [
-      { id: 1, title: '10,000 Steps', description: 'Take 10,000 steps today', points: 50, completed: false },
-      { id: 2, title: 'Drink Water', description: 'Drink 8 glasses of water', points: 20, completed: false },
-    ],
-    weekly: [
-      { id: 3, title: 'Workout', description: 'Complete 3 workouts this week', points: 100, completed: false },
-      { id: 4, title: 'Healthy Meals', description: 'Eat 5 healthy meals', points: 75, completed: false },
-    ],
-    monthly: [
-      { id: 5, title: 'Read a Book', description: 'Finish reading a book this month', points: 200, completed: false },
-      { id: 6, title: 'Save Money', description: 'Save $100 this month', points: 150, completed: false },
-    ],
-  };
+  const { quests, completeQuest } = usePoints();
 
   const handleCategoryClick = (category: QuestCategory) => {
     setActiveCategory(activeCategory === category ? null : category);
   };
 
-  const completeQuest = (points: number) => {
-    addPoints(points);
-  };
+  const uncompletedQuests = (category: QuestCategory) => {
+    return quests[category].filter(quest => !quest.completed);
+  }
 
   return (
     <div className="quests">
@@ -40,13 +25,13 @@ const Quests: React.FC = () => {
         </div>
         {activeCategory === 'daily' && (
           <div className="quest-list">
-            {quests.daily.map(quest => (
+            {uncompletedQuests('daily').map(quest => (
               <div className="quest-card" key={quest.id}>
                 <h3>{quest.title}</h3>
                 <p>{quest.description}</p>
                 <p className="points">{quest.points} Points</p>
-                <button onClick={() => completeQuest(quest.points)} disabled={quest.completed}>
-                  {quest.completed ? 'Completed' : 'Complete'}
+                <button onClick={() => completeQuest(quest.id, 'daily')}>
+                  Complete
                 </button>
               </div>
             ))}
@@ -58,13 +43,13 @@ const Quests: React.FC = () => {
         </div>
         {activeCategory === 'weekly' && (
           <div className="quest-list">
-            {quests.weekly.map(quest => (
+            {uncompletedQuests('weekly').map(quest => (
               <div className="quest-card" key={quest.id}>
                 <h3>{quest.title}</h3>
                 <p>{quest.description}</p>
                 <p className="points">{quest.points} Points</p>
-                <button onClick={() => completeQuest(quest.points)} disabled={quest.completed}>
-                  {quest.completed ? 'Completed' : 'Complete'}
+                <button onClick={() => completeQuest(quest.id, 'weekly')}>
+                  Complete
                 </button>
               </div>
             ))}
@@ -76,13 +61,13 @@ const Quests: React.FC = () => {
         </div>
         {activeCategory === 'monthly' && (
           <div className="quest-list">
-            {quests.monthly.map(quest => (
+            {uncompletedQuests('monthly').map(quest => (
               <div className="quest-card" key={quest.id}>
                 <h3>{quest.title}</h3>
                 <p>{quest.description}</p>
                 <p className="points">{quest.points} Points</p>
-                <button onClick={() => completeQuest(quest.points)} disabled={quest.completed}>
-                  {quest.completed ? 'Completed' : 'Complete'}
+                <button onClick={() => completeQuest(quest.id, 'monthly')}>
+                  Complete
                 </button>
               </div>
             ))}

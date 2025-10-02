@@ -10,13 +10,23 @@ import { usePoints } from './contexts/PointsContext';
 // import Rewards from './pages/Rewards/Rewards';
 
 function App() {
-  const { points } = usePoints();
+  const { points, streak, showNotification, setShowNotification } = usePoints();
 
   return (
     <div className="App">
+      {showNotification && (
+        <div className="notification-overlay">
+            <div className="notification-popup">
+                <h2>Daily Quests Available!</h2>
+                <p>You have daily quests to complete. Don't miss out!</p>
+                <button onClick={() => setShowNotification(false)}>Got it!</button>
+            </div>
+        </div>
+      )}
       <Navbar />
       <div className="points-display">
         <p>Points: {points}</p>
+        <p>Streak: 🔥{streak}</p>
       </div>
       <main className="content">
         <Routes>
