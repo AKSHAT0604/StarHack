@@ -7,26 +7,17 @@ import Quests from './pages/Quests/Quests';
 import Community from './pages/Community/Community';
 import Leaderboards from './pages/Leaderboards/Leaderboards';
 import { usePoints } from './contexts/PointsContext';
-// import Rewards from './pages/Rewards/Rewards';
+import Rewards from './pages/Rewards/Rewards';
 
 function App() {
-  const { points, streak, showNotification, setShowNotification } = usePoints();
+  const { user } = usePoints();
 
   return (
     <div className="App">
-      {showNotification && (
-        <div className="notification-overlay">
-            <div className="notification-popup">
-                <h2>Daily Quests Available!</h2>
-                <p>You have daily quests to complete. Don't miss out!</p>
-                <button onClick={() => setShowNotification(false)}>Got it!</button>
-            </div>
-        </div>
-      )}
       <Navbar />
       <div className="points-display">
-        <p>Points: {points}</p>
-        <p>Streak: 🔥{streak}</p>
+        <p>Points: {user?.points ?? 0}</p>
+        <p>Streak: 🔥{user?.streak ?? 0}</p>
       </div>
       <main className="content">
         <Routes>
@@ -35,7 +26,7 @@ function App() {
           <Route path="/quests" element={<Quests />} />
           <Route path="/community" element={<Community />} />
           <Route path="/leaderboards" element={<Leaderboards />} />
-          {/* <Route path="/rewards" element={<Rewards />} /> */}
+          <Route path="/rewards" element={<Rewards />} />
         </Routes>
       </main>
     </div>

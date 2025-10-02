@@ -1,20 +1,42 @@
 import React, { useState } from 'react';
 import './Quests.css';
-import { usePoints } from '../../contexts/PointsContext';
+import { usePoints, Quest } from '../../contexts/PointsContext';
 
 type QuestCategory = 'daily' | 'weekly' | 'monthly';
 
 const Quests: React.FC = () => {
-  const [activeCategory, setActiveCategory] = useState<QuestCategory | null>(null);
+  const [activeCategory, setActiveCategory] = useState<QuestCategory | null>('daily');
   const { quests, completeQuest } = usePoints();
 
   const handleCategoryClick = (category: QuestCategory) => {
     setActiveCategory(activeCategory === category ? null : category);
   };
 
-  const uncompletedQuests = (category: QuestCategory) => {
-    return quests[category].filter(quest => !quest.completed);
-  }
+  const getQuestsByCategory = (category: QuestCategory) => {
+    return quests.filter(quest => quest.quest_type === category && !quest.completed);
+  };
+
+  const renderQuestList = (category: QuestCategory) => {
+    const filteredQuests = getQuestsByCategory(category);
+    return (
+      <div className="quest-list">
+        {filteredQuests.length > 0 ? (
+          filteredQuests.map((quest: Quest) => (
+            <div className="quest-card" key={quest.quest_id}>
+              <h3>{quest.quest_name}</h3>
+              <p>{quest.quest_description}</p>
+              <p className="points">{quest.points_reward} Points</p>
+              <button onClick={() => completeQuest(quest.quest_id)}>
+                Complete
+              </button>
+            </div>
+          ))
+        ) : (
+          <p>All {category} quests completed!</p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="quests">
@@ -23,56 +45,17 @@ const Quests: React.FC = () => {
         <div className="quest-category-box daily" onClick={() => handleCategoryClick('daily')}>
           <h2>Daily Quests</h2>
         </div>
-        {activeCategory === 'daily' && (
-          <div className="quest-list">
-            {uncompletedQuests('daily').map(quest => (
-              <div className="quest-card" key={quest.id}>
-                <h3>{quest.title}</h3>
-                <p>{quest.description}</p>
-                <p className="points">{quest.points} Points</p>
-                <button onClick={() => completeQuest(quest.id, 'daily')}>
-                  Complete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {activeCategory === 'daily' && renderQuestList('daily')}
 
         <div className="quest-category-box weekly" onClick={() => handleCategoryClick('weekly')}>
           <h2>Weekly Quests</h2>
         </div>
-        {activeCategory === 'weekly' && (
-          <div className="quest-list">
-            {uncompletedQuests('weekly').map(quest => (
-              <div className="quest-card" key={quest.id}>
-                <h3>{quest.title}</h3>
-                <p>{quest.description}</p>
-                <p className="points">{quest.points} Points</p>
-                <button onClick={() => completeQuest(quest.id, 'weekly')}>
-                  Complete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {activeCategory === 'weekly' && renderQuestList('weekly')}
 
         <div className="quest-category-box monthly" onClick={() => handleCategoryClick('monthly')}>
           <h2>Monthly Quests</h2>
         </div>
-        {activeCategory === 'monthly' && (
-          <div className="quest-list">
-            {uncompletedQuests('monthly').map(quest => (
-              <div className="quest-card" key={quest.id}>
-                <h3>{quest.title}</h3>
-                <p>{quest.description}</p>
-                <p className="points">{quest.points} Points</p>
-                <button onClick={() => completeQuest(quest.id, 'monthly')}>
-                  Complete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {activeCategory === 'monthly' && renderQuestList('monthly')}
       </div>
     </div>
   );

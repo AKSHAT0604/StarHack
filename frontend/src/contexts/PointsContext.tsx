@@ -1,92 +1,127 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 
-// Define the structure of a single quest
+const API_URL = 'http://localhost:8000';
+const USER_ID = 1; // Hardcoded for now
+
+// --- TypeScript Interfaces ---
+
 export interface Quest {
-    id: number;
-    title: string;
-    description: string;
-    points: number;
+    quest_id: number;
+    quest_name: string;
+    quest_description: string;
+    quest_type: 'daily' | 'weekly' | 'monthly';
+    points_reward: number;
     completed: boolean;
-    category: 'daily' | 'weekly' | 'monthly';
 }
 
-// Define the structure of the quests object
-export interface Quests {
-    daily: Quest[];
-    weekly: Quest[];
-    monthly: Quest[];
+export interface Reward {
+    reward_id: number;
+    reward_name: string;
+    reward_description: string;
+    cost: number;
+}
+
+export interface User {
+    user_id: number;
+    username: string;
+    points: number;
+    streak: number;
+}
+
+export interface LeaderboardUser {
+    user_id: number;
+    username: string;
+    points: number;
+    streak: number;
 }
 
 interface PointsContextType {
-    points: number;
-    streak: number;
-    quests: Quests;
-    addPoints: (amount: number) => void;
-    completeQuest: (id: number, category: 'daily' | 'weekly' | 'monthly') => void;
-    showNotification: boolean;
-    setShowNotification: (show: boolean) => void;
+    user: User | null;
+    quests: Quest[];
+    rewards: Reward[];
+    leaderboard: LeaderboardUser[];
+    completeQuest: (questId: number) => Promise<void>;
+    claimReward: (rewardId: number) => Promise<void>;
+    fetchData: () => void;
 }
 
 const PointsContext = createContext<PointsContextType | undefined>(undefined);
 
-const initialQuests: Quests = {
-    daily: [
-        { id: 1, title: '10,000 Steps', description: 'Take 10,000 steps today', points: 50, completed: false, category: 'daily' },
-        { id: 2, title: 'Drink Water', description: 'Drink 8 glasses of water', points: 20, completed: false, category: 'daily' },
-    ],
-    weekly: [
-        { id: 3, title: 'Workout', description: 'Complete 3 workouts this week', points: 100, completed: false, category: 'weekly' },
-        { id: 4, title: 'Healthy Meals', description: 'Eat 5 healthy meals', points: 75, completed: false, category: 'weekly' },
-    ],
-    monthly: [
-        { id: 5, title: 'Read a Book', description: 'Finish reading a book this month', points: 200, completed: false, category: 'monthly' },
-        { id: 6, title: 'Save Money', description: 'Save $100 this month', points: 150, completed: false, category: 'monthly' },
-    ],
-};
-
 export const PointsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [points, setPoints] = useState(0);
-    const [streak, setStreak] = useState(0);
-    const [quests, setQuests] = useState<Quests>(initialQuests);
-    const [showNotification, setShowNotification] = useState(false);
+    const [user, setUser] = useState<User | null>(null);
+    const [quests, setQuests] = useState<Quest[]>([]);
+    const [rewards, setRewards] = useState<Reward[]>([]);
+    const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
 
-    useEffect(() => {
-        const allDailyCompleted = quests.daily.every(q => q.completed);
-        if (!allDailyCompleted) {
-            setShowNotification(true);
+    const fetchData = async () => {
+        try {
+            // Fetch user data, quests, rewards, and leaderboard in parallel
+            const [userRes, questsRes, rewardsRes, leaderboardRes] = await Promise.all([
+                fetch(`${API_URL}/user/${USER_ID}`),
+                fetch(`${API_URL}/quests/${USER_ID}`),
+                fetch(`${API_URL}/rewards`),
+                fetch(`${API_URL}/leaderboard`),
+            ]);
+
+            if (!userRes.ok || !questsRes.ok || !rewardsRes.ok || !leaderboardRes.ok) {
+                throw new Error('Failed to fetch data from the server.');
+            }
+
+            const userData: User = await userRes.json();
+            const questsData: Quest[] = await questsRes.json();
+            const rewardsData: Reward[] = await rewardsRes.json();
+            const leaderboardData: LeaderboardUser[] = await leaderboardRes.json();
+
+            setUser(userData);
+            setQuests(questsData);
+            setRewards(rewardsData);
+            setLeaderboard(leaderboardData);
+
+        } catch (error) {
+            console.error("Error fetching data:", error);
+            // Optionally, set some error state to show in the UI
         }
-    }, []); // Runs once on mount
-
-    const addPoints = (amount: number) => {
-        setPoints(prevPoints => prevPoints + amount);
     };
 
-    const completeQuest = (id: number, category: 'daily' | 'weekly' | 'monthly') => {
-        let allDailyCompletedBefore = quests.daily.every(q => q.completed);
+    useEffect(() => {
+        fetchData();
+    }, []);
 
-        setQuests(prevQuests => {
-            const newQuests = { ...prevQuests };
-            const questIndex = newQuests[category].findIndex(q => q.id === id);
-
-            if (questIndex !== -1 && !newQuests[category][questIndex].completed) {
-                addPoints(newQuests[category][questIndex].points);
-                newQuests[category][questIndex].completed = true;
-
-                // Check if all daily quests are now completed
-                if (category === 'daily' && !allDailyCompletedBefore) {
-                    const allDailyNowCompleted = newQuests.daily.every(q => q.completed);
-                    if (allDailyNowCompleted) {
-                        setStreak(prevStreak => prevStreak + 1);
-                        setShowNotification(false); // Hide notification once all are done
-                    }
-                }
+    const completeQuest = async (questId: number) => {
+        try {
+            const response = await fetch(`${API_URL}/quests/complete/${USER_ID}/${questId}`, {
+                method: 'POST',
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to complete quest');
             }
-            return newQuests;
-        });
+            // Re-fetch all data to ensure UI is in sync with the database
+            await fetchData();
+        } catch (error) {
+            console.error("Error completing quest:", error);
+        }
+    };
+
+    const claimReward = async (rewardId: number) => {
+        try {
+            const response = await fetch(`${API_URL}/rewards/claim/${USER_ID}/${rewardId}`, {
+                method: 'POST',
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to claim reward');
+            }
+            // Re-fetch user data to show updated points
+            await fetchData();
+        } catch (error) {
+            console.error("Error claiming reward:", error);
+            throw error; // Re-throw to handle it in the component
+        }
     };
 
     return (
-        <PointsContext.Provider value={{ points, streak, quests, addPoints, completeQuest, showNotification, setShowNotification }}>
+        <PointsContext.Provider value={{ user, quests, rewards, leaderboard, completeQuest, claimReward, fetchData }}>
             {children}
         </PointsContext.Provider>
     );

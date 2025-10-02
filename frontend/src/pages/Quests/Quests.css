@@ -3,6 +3,21 @@
   text-align: center;
 }
 
+.reset-button {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.reset-button:hover {
+  background-color: #c0392b;
+}
+
 .quest-categories {
   display: flex;
   flex-direction: column;

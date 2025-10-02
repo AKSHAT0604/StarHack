@@ -1,502 +1,214 @@
-"""
-StarLife Backend - CRUD Operations
-FastAPI application with PostgreSQL database operations
-"""
-
+import os
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
-from datetime import date, datetime
+from pydantic import BaseModel
+from typing import List
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
-import os
+from datetime import date, timedelta
 
-app = FastAPI(title="StarLife API", version="1.0.0")
+app = FastAPI(title="StarHack API")
 
-# CORS middleware for React frontend
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=["http://localhost:3000"],  # Adjust for your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database configuration
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "postgres"),
-    "database": os.getenv("DB_NAME", "starlife_db"),
-    "user": os.getenv("DB_USER", "starlife_user"),
-    "password": os.getenv("DB_PASSWORD", "starlife_pass"),
-    "port": os.getenv("DB_PORT", "5432")
-}
+# Database connection
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://starlife_user:starlife_pass@postgres/starlife_db")
 
-# Database connection context manager
 @contextmanager
 def get_db_connection():
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(DATABASE_URL)
     try:
         yield conn
         conn.commit()
-    except Exception as e:
+    except Exception:
         conn.rollback()
-        raise e
+        raise
     finally:
         conn.close()
 
-# Pydantic models
-class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
-
-class UserResponse(BaseModel):
+# Pydantic Models
+class User(BaseModel):
     user_id: int
     username: str
-    email: str
-    created_at: datetime
-    updated_at: datetime
+    points: int
+    streak: int
+    last_login: date
 
-class RewardCreate(BaseModel):
-    user_id: int
-    reward_name: str
-    reward_points: int
-    reward_type: Optional[str] = None
-
-class RewardResponse(BaseModel):
-    reward_id: int
-    user_id: int
-    reward_name: str
-    reward_points: int
-    reward_type: Optional[str]
-    earned_at: datetime
-
-class ActivityCreate(BaseModel):
-    user_id: int
-    activity_type: str
-    activity_duration: Optional[int] = None
-    activity_date: Optional[date] = None
-    calories_burned: Optional[int] = 0
-
-class ActivityResponse(BaseModel):
-    activity_id: int
-    user_id: int
-    activity_type: str
-    activity_duration: Optional[int]
-    activity_date: date
-    calories_burned: int
-    created_at: datetime
-
-class QuestCreate(BaseModel):
-    quest_name: str
-    quest_description: Optional[str] = None
-    quest_type: Optional[str] = None
-    points_reward: int = 0
-    is_active: bool = True
-
-class QuestResponse(BaseModel):
+class Quest(BaseModel):
     quest_id: int
     quest_name: str
-    quest_description: Optional[str]
-    quest_type: Optional[str]
+    quest_description: str
+    quest_type: str
     points_reward: int
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    completed: bool = False
 
-class UserQuestCreate(BaseModel):
-    user_id: int
-    quest_id: int
+class Reward(BaseModel):
+    reward_id: int
+    reward_name: str
+    reward_description: str
+    cost: int
 
-class UserQuestUpdate(BaseModel):
-    status: Optional[str] = None
-    progress: Optional[int] = None
+# --- User and Game Data Endpoints ---
 
-# Root endpoint
-@app.get("/")
-def read_root():
-    return {
-        "message": "StarLife API",
-        "version": "1.0.0",
-        "endpoints": {
-            "users": "/users",
-            "rewards": "/rewards",
-            "activity": "/activity",
-            "quests": "/quests"
-        }
-    }
+@app.get("/user/{user_id}", response_model=User)
+def get_user_data(user_id: int):
+    """
+    Retrieves user's main data (points, streak) and updates streak if necessary.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
 
-# Health check
-@app.get("/health")
-def health_check():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-        return {"status": "healthy", "database": "connected"}
-    except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}
+            # Check and reset streak if a day has been missed
+            today = date.today()
+            last_login = user['last_login']
+            if last_login and (today - last_login).days > 1:
+                user['streak'] = 0
+                cur.execute("UPDATE users SET streak = 0 WHERE user_id = %s", (user_id,))
 
-# ============= USER ENDPOINTS =============
+            # Update last_login to today
+            if last_login != today:
+                 cur.execute("UPDATE users SET last_login = %s WHERE user_id = %s", (today, user_id,))
 
-@app.post("/users", response_model=UserResponse)
-def create_user(user: UserCreate):
-    """Create a new user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO users (username, email)
-                    VALUES (%s, %s)
-                    RETURNING user_id, username, email, created_at, updated_at
-                    """,
-                    (user.username, user.email)
-                )
-                result = cur.fetchone()
-                return result
-    except psycopg2.IntegrityError:
-        raise HTTPException(status_code=400, detail="Username or email already exists")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            return user
 
-@app.get("/users", response_model=List[UserResponse])
-def get_users():
-    """Get all users"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM users ORDER BY user_id")
-                return cur.fetchall()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int):
-    """Get a specific user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="User not found")
-                return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user: UserCreate):
-    """Update a user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE users
-                    SET username = %s, email = %s
-                    WHERE user_id = %s
-                    RETURNING user_id, username, email, created_at, updated_at
-                    """,
-                    (user.username, user.email, user_id)
-                )
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="User not found")
-                return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/users/{user_id}")
-def delete_user(user_id: int):
-    """Delete a user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM users WHERE user_id = %s RETURNING user_id", (user_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="User not found")
-                return {"message": "User deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ============= REWARD ENDPOINTS =============
-
-@app.post("/rewards", response_model=RewardResponse)
-def create_reward(reward: RewardCreate):
-    """Create a new reward"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO rewards (user_id, reward_name, reward_points, reward_type)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING reward_id, user_id, reward_name, reward_points, reward_type, earned_at
-                    """,
-                    (reward.user_id, reward.reward_name, reward.reward_points, reward.reward_type)
-                )
-                return cur.fetchone()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/rewards", response_model=List[RewardResponse])
-def get_rewards(user_id: Optional[int] = None):
-    """Get all rewards or rewards for a specific user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                if user_id:
-                    cur.execute("SELECT * FROM rewards WHERE user_id = %s ORDER BY earned_at DESC", (user_id,))
-                else:
-                    cur.execute("SELECT * FROM rewards ORDER BY earned_at DESC")
-                return cur.fetchall()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/rewards/{reward_id}")
-def delete_reward(reward_id: int):
-    """Delete a reward"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM rewards WHERE reward_id = %s RETURNING reward_id", (reward_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="Reward not found")
-                return {"message": "Reward deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ============= ACTIVITY ENDPOINTS =============
-
-@app.post("/activity", response_model=ActivityResponse)
-def create_activity(activity: ActivityCreate):
-    """Create a new activity"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO activity (user_id, activity_type, activity_duration, activity_date, calories_burned)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING activity_id, user_id, activity_type, activity_duration, activity_date, calories_burned, created_at
-                    """,
-                    (activity.user_id, activity.activity_type, activity.activity_duration, 
-                     activity.activity_date, activity.calories_burned)
-                )
-                return cur.fetchone()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/activity", response_model=List[ActivityResponse])
-def get_activity(user_id: Optional[int] = None):
-    """Get all activities or activities for a specific user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                if user_id:
-                    cur.execute("SELECT * FROM activity WHERE user_id = %s ORDER BY activity_date DESC", (user_id,))
-                else:
-                    cur.execute("SELECT * FROM activity ORDER BY activity_date DESC")
-                return cur.fetchall()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/activity/{activity_id}")
-def delete_activity(activity_id: int):
-    """Delete an activity"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM activity WHERE activity_id = %s RETURNING activity_id", (activity_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="Activity not found")
-                return {"message": "Activity deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ============= QUEST ENDPOINTS =============
-
-@app.post("/quests", response_model=QuestResponse)
-def create_quest(quest: QuestCreate):
-    """Create a new quest"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO quests (quest_name, quest_description, quest_type, points_reward, is_active)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING quest_id, quest_name, quest_description, quest_type, points_reward, is_active, created_at, updated_at
-                    """,
-                    (quest.quest_name, quest.quest_description, quest.quest_type, quest.points_reward, quest.is_active)
-                )
-                return cur.fetchone()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/quests", response_model=List[QuestResponse])
-def get_quests(is_active: Optional[bool] = None):
-    """Get all quests or only active quests"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                if is_active is not None:
-                    cur.execute("SELECT * FROM quests WHERE is_active = %s ORDER BY quest_id", (is_active,))
-                else:
-                    cur.execute("SELECT * FROM quests ORDER BY quest_id")
-                return cur.fetchall()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/quests/{quest_id}", response_model=QuestResponse)
-def get_quest(quest_id: int):
-    """Get a specific quest"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM quests WHERE quest_id = %s", (quest_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="Quest not found")
-                return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/quests/{quest_id}", response_model=QuestResponse)
-def update_quest(quest_id: int, quest: QuestCreate):
-    """Update a quest"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE quests
-                    SET quest_name = %s, quest_description = %s, quest_type = %s, 
-                        points_reward = %s, is_active = %s
-                    WHERE quest_id = %s
-                    RETURNING quest_id, quest_name, quest_description, quest_type, points_reward, is_active, created_at, updated_at
-                    """,
-                    (quest.quest_name, quest.quest_description, quest.quest_type, 
-                     quest.points_reward, quest.is_active, quest_id)
-                )
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="Quest not found")
-                return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/quests/{quest_id}")
-def delete_quest(quest_id: int):
-    """Delete a quest"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM quests WHERE quest_id = %s RETURNING quest_id", (quest_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="Quest not found")
-                return {"message": "Quest deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ============= USER QUEST ENDPOINTS =============
-
-@app.post("/user-quests")
-def assign_quest_to_user(user_quest: UserQuestCreate):
-    """Assign a quest to a user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO user_quests (user_id, quest_id)
-                    VALUES (%s, %s)
-                    RETURNING user_quest_id, user_id, quest_id, status, progress, started_at
-                    """,
-                    (user_quest.user_id, user_quest.quest_id)
-                )
-                return cur.fetchone()
-    except psycopg2.IntegrityError:
-        raise HTTPException(status_code=400, detail="Quest already assigned to user")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/user-quests/{user_id}")
+@app.get("/quests/{user_id}", response_model=List[Quest])
 def get_user_quests(user_id: int):
-    """Get all quests for a specific user"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    """
+    Retrieves all active quests and marks the ones the user has completed today.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # This query gets all active quests and joins them with user_quests
+            # to see if the current user has completed them today.
+            query = """
+                SELECT
+                    q.quest_id,
+                    q.quest_name,
+                    q.quest_description,
+                    q.quest_type,
+                    q.points_reward,
+                    CASE
+                        WHEN uq.completed_at IS NOT NULL AND uq.completed_at::date = CURRENT_DATE
+                        THEN TRUE
+                        ELSE FALSE
+                    END AS completed
+                FROM quests q
+                LEFT JOIN user_quests uq ON q.quest_id = uq.quest_id AND uq.user_id = %s
+                WHERE q.is_active = TRUE
+                ORDER BY q.quest_type, q.quest_id;
+            """
+            cur.execute(query, (user_id,))
+            quests = cur.fetchall()
+            return quests
+
+
+@app.post("/quests/complete/{user_id}/{quest_id}")
+def complete_quest(user_id: int, quest_id: int):
+    """
+    Marks a quest as complete for a user, updates points, and manages streak.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if quest is already completed today
+            cur.execute(
+                "SELECT * FROM user_quests WHERE user_id = %s AND quest_id = %s AND completed_at::date = CURRENT_DATE",
+                (user_id, quest_id)
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail="Quest already completed today")
+
+            # Get quest points
+            cur.execute("SELECT points_reward, quest_type FROM quests WHERE quest_id = %s", (quest_id,))
+            quest = cur.fetchone()
+            if not quest:
+                raise HTTPException(status_code=404, detail="Quest not found")
+
+            # Record quest completion
+            cur.execute(
+                "INSERT INTO user_quests (user_id, quest_id, completed_at) VALUES (%s, %s, CURRENT_TIMESTAMP)",
+                (user_id, quest_id)
+            )
+
+            # Update user points
+            cur.execute(
+                "UPDATE users SET points = points + %s WHERE user_id = %s",
+                (quest['points_reward'], user_id)
+            )
+
+            # Update streak for daily quests
+            if quest['quest_type'] == 'daily':
                 cur.execute(
-                    """
-                    SELECT uq.*, q.quest_name, q.quest_description, q.points_reward
-                    FROM user_quests uq
-                    JOIN quests q ON uq.quest_id = q.quest_id
-                    WHERE uq.user_id = %s
-                    ORDER BY uq.started_at DESC
-                    """,
+                    "UPDATE users SET streak = streak + 1, last_login = CURRENT_DATE WHERE user_id = %s",
                     (user_id,)
                 )
-                return cur.fetchall()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/user-quests/{user_quest_id}")
-def update_user_quest(user_quest_id: int, update: UserQuestUpdate):
-    """Update user quest progress"""
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                updates = []
-                values = []
-                
-                if update.status:
-                    updates.append("status = %s")
-                    values.append(update.status)
-                    if update.status == "completed":
-                        updates.append("completed_at = CURRENT_TIMESTAMP")
-                
-                if update.progress is not None:
-                    updates.append("progress = %s")
-                    values.append(update.progress)
-                
-                if not updates:
-                    raise HTTPException(status_code=400, detail="No updates provided")
-                
-                values.append(user_quest_id)
-                query = f"UPDATE user_quests SET {', '.join(updates)} WHERE user_quest_id = %s RETURNING *"
-                
-                cur.execute(query, values)
-                result = cur.fetchone()
-                if not result:
-                    raise HTTPException(status_code=404, detail="User quest not found")
-                return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            conn.commit()
+            return {"message": "Quest completed successfully", "points_added": quest['points_reward']}
+
+
+@app.get("/leaderboard", response_model=List[User])
+def get_leaderboard():
+    """
+    Retrieves top 10 users sorted by points.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT user_id, username, points, streak, last_login FROM users ORDER BY points DESC LIMIT 10")
+            return cur.fetchall()
+
+# --- Rewards Endpoints ---
+
+@app.get("/rewards", response_model=List[Reward])
+def get_rewards():
+    """
+    Retrieves all active rewards.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT reward_id, reward_name, reward_description, cost FROM rewards WHERE is_active = TRUE")
+            return cur.fetchall()
+
+@app.post("/rewards/claim/{user_id}/{reward_id}")
+def claim_reward(user_id: int, reward_id: int):
+    """
+    Allows a user to claim a reward, deducting the cost from their points.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get user points and reward cost
+            cur.execute("SELECT points FROM users WHERE user_id = %s", (user_id,))
+            user = cur.fetchone()
+            cur.execute("SELECT cost FROM rewards WHERE reward_id = %s", (reward_id,))
+            reward = cur.fetchone()
+
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            if not reward:
+                raise HTTPException(status_code=404, detail="Reward not found")
+
+            if user['points'] < reward['cost']:
+                raise HTTPException(status_code=400, detail="Not enough points")
+
+            # Deduct points and record the claimed reward
+            cur.execute("UPDATE users SET points = points - %s WHERE user_id = %s", (reward['cost'], user_id))
+            cur.execute(
+                "INSERT INTO user_rewards (user_id, reward_id) VALUES (%s, %s)",
+                (user_id, reward_id)
+            )
+            conn.commit()
+            return {"message": "Reward claimed successfully", "new_points": user['points'] - reward['cost']}
 
 if __name__ == "__main__":
     import uvicorn
