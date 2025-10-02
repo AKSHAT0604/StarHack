@@ -6,12 +6,18 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import Quests from './pages/Quests/Quests';
 import Community from './pages/Community/Community';
 import Leaderboards from './pages/Leaderboards/Leaderboards';
+import { usePoints } from './contexts/PointsContext';
 // import Rewards from './pages/Rewards/Rewards';
 
 function App() {
+  const { points } = usePoints();
+
   return (
     <div className="App">
       <Navbar />
+      <div className="points-display">
+        <p>Points: {points}</p>
+      </div>
       <main className="content">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
