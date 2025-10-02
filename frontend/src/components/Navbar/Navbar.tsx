@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { FaHome, FaFlag, FaUsers, FaTrophy, FaGift } from 'react-icons/fa';
+import { FaHome, FaFlag, FaUsers, FaTrophy, FaGift, FaRoute } from 'react-icons/fa';
 import './Navbar.css';
 
 const Navbar: React.FC = () => {
@@ -33,6 +33,12 @@ const Navbar: React.FC = () => {
           className={({ isActive }) => isActive ? 'active' : ''}
         >
           <FaTrophy /> <span>Leaderboards</span>
+        </NavLink>
+        <NavLink 
+          to="/journey" 
+          className={({ isActive }) => isActive ? 'active' : ''}
+        >
+          <FaRoute /> <span>Journey</span>
         </NavLink>
         <NavLink 
           to="/rewards" 

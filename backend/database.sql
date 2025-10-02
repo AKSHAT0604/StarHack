@@ -93,6 +93,72 @@ CREATE TABLE user_community_quests (
     UNIQUE(user_id, community_quest_id)
 );
 
+-- User Journey / Historical Data Tracking Tables
+
+-- Track points earned per community over time
+CREATE TABLE user_community_points_history (
+    history_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    community_id INTEGER REFERENCES communities(community_id) ON DELETE CASCADE,
+    points_earned INTEGER NOT NULL,
+    quest_completed VARCHAR(200),
+    earned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Track overall points history for line chart
+CREATE TABLE user_points_history (
+    history_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    total_points INTEGER NOT NULL,
+    points_change INTEGER NOT NULL,
+    activity_description VARCHAR(200),
+    recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Track health metrics over time for AI/LLM insights
+CREATE TABLE user_health_metrics (
+    metric_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    metric_date DATE NOT NULL,
+    weight_kg DECIMAL(5,2),
+    sleep_hours DECIMAL(4,2),
+    water_intake_ml INTEGER,
+    steps INTEGER,
+    heart_rate_avg INTEGER,
+    workout_minutes INTEGER,
+    calories_burned INTEGER,
+    mood_score INTEGER CHECK (mood_score BETWEEN 1 AND 10),
+    stress_level INTEGER CHECK (stress_level BETWEEN 1 AND 10),
+    energy_level INTEGER CHECK (energy_level BETWEEN 1 AND 10),
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, metric_date)
+);
+
+-- Track user achievements and milestones
+CREATE TABLE user_achievements (
+    achievement_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    achievement_type VARCHAR(50), -- 'streak', 'points_milestone', 'quest_completion', 'community_joined'
+    achievement_title VARCHAR(200),
+    achievement_description TEXT,
+    achieved_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- AI/LLM context data for personalized quest generation
+CREATE TABLE user_preferences (
+    preference_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    favorite_activities TEXT[], -- Array of activity types
+    fitness_goals TEXT[],
+    health_conditions TEXT[],
+    dietary_preferences TEXT[],
+    available_time_slots TEXT[], -- e.g., 'morning', 'afternoon', 'evening'
+    preferred_difficulty VARCHAR(20), -- 'easy', 'medium', 'hard'
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
+
 -- Seed initial data
 -- Current user (user_id will be 1)
 INSERT INTO users (username, email, points, spent_points, weekly_points, streak, last_login) VALUES 
@@ -183,3 +249,112 @@ INSERT INTO user_communities (user_id, community_id) VALUES
 (8, 2), (8, 6),
 (9, 1), (9, 4), (9, 5),
 (10, 3), (10, 5), (10, 6);
+
+-- ===== HISTORICAL DATA FOR CURRENT USER (2 YEARS) =====
+
+-- Community Points Distribution (for pie chart)
+-- Running Club: 4,500 points over 2 years
+INSERT INTO user_community_points_history (user_id, community_id, points_earned, quest_completed, earned_at) VALUES
+(1, 1, 200, '5K Fun Run', '2023-10-15 08:00:00+00'),
+(1, 1, 500, 'City Marathon', '2023-11-20 07:00:00+00'),
+(1, 1, 300, 'Night Run Challenge', '2024-01-10 19:00:00+00'),
+(1, 1, 200, '5K Fun Run', '2024-02-14 08:00:00+00'),
+(1, 1, 350, 'Half Marathon', '2024-03-22 06:00:00+00'),
+(1, 1, 200, 'Sprint Challenge', '2024-04-18 07:00:00+00'),
+(1, 1, 500, 'City Marathon', '2024-05-25 07:00:00+00'),
+(1, 1, 300, 'Trail Run', '2024-06-30 06:00:00+00'),
+(1, 1, 250, 'Beach Run', '2024-07-15 07:00:00+00'),
+(1, 1, 200, '5K Fun Run', '2024-08-20 08:00:00+00'),
+(1, 1, 400, 'Ultra Challenge', '2024-09-10 05:00:00+00'),
+(1, 1, 300, 'Charity Run', '2024-09-28 08:00:00+00');
+
+-- Yoga & Mindfulness: 3,200 points
+INSERT INTO user_community_points_history (user_id, community_id, points_earned, quest_completed, earned_at) VALUES
+(1, 2, 150, 'Sunrise Yoga', '2023-10-22 06:00:00+00'),
+(1, 2, 400, 'Meditation Retreat', '2023-12-05 08:00:00+00'),
+(1, 2, 250, 'Yoga Workshop', '2024-01-18 10:00:00+00'),
+(1, 2, 150, 'Sunrise Yoga', '2024-02-25 06:00:00+00'),
+(1, 2, 300, 'Mindfulness Session', '2024-03-30 14:00:00+00'),
+(1, 2, 400, 'Meditation Retreat', '2024-05-12 08:00:00+00'),
+(1, 2, 250, 'Yoga Workshop', '2024-06-20 10:00:00+00'),
+(1, 2, 150, 'Sunset Yoga', '2024-07-28 18:00:00+00'),
+(1, 2, 350, 'Wellness Weekend', '2024-08-15 09:00:00+00'),
+(1, 2, 200, 'Breathing Workshop', '2024-09-08 15:00:00+00'),
+(1, 2, 400, 'Meditation Retreat', '2024-09-22 08:00:00+00'),
+(1, 2, 200, 'Evening Yoga', '2024-09-30 18:00:00+00');
+
+-- Fitness Warriors: 5,800 points
+INSERT INTO user_community_points_history (user_id, community_id, points_earned, quest_completed, earned_at) VALUES
+(1, 3, 300, 'HIIT Bootcamp', '2023-10-28 17:00:00+00'),
+(1, 3, 450, 'Strength Challenge', '2023-11-15 09:00:00+00'),
+(1, 3, 550, 'CrossFit Competition', '2023-12-20 08:00:00+00'),
+(1, 3, 300, 'HIIT Bootcamp', '2024-01-25 17:00:00+00'),
+(1, 3, 400, 'Endurance Challenge', '2024-02-28 08:00:00+00'),
+(1, 3, 450, 'Strength Challenge', '2024-03-18 09:00:00+00'),
+(1, 3, 500, 'Warrior Weekend', '2024-04-22 08:00:00+00'),
+(1, 3, 300, 'HIIT Bootcamp', '2024-05-30 17:00:00+00'),
+(1, 3, 550, 'CrossFit Competition', '2024-06-25 08:00:00+00'),
+(1, 3, 350, 'Strength Workshop', '2024-07-20 10:00:00+00'),
+(1, 3, 450, 'Strength Challenge', '2024-08-28 09:00:00+00'),
+(1, 3, 400, 'Fitness Fest', '2024-09-18 08:00:00+00'),
+(1, 3, 350, 'Bootcamp Special', '2024-09-25 17:00:00+00');
+
+-- Overall Points History (for line chart - quarterly snapshots over 2 years)
+INSERT INTO user_points_history (user_id, total_points, points_change, activity_description, recorded_at) VALUES
+(1, 0, 0, 'Account Created', '2023-10-01 00:00:00+00'),
+(1, 450, 450, 'First month achievements', '2023-11-01 00:00:00+00'),
+(1, 1200, 750, 'Marathon and quests completed', '2023-12-01 00:00:00+00'),
+(1, 2100, 900, 'New year fitness goals', '2024-01-01 00:00:00+00'),
+(1, 3200, 1100, 'Consistent weekly progress', '2024-02-01 00:00:00+00'),
+(1, 4500, 1300, 'Spring challenge streak', '2024-03-01 00:00:00+00'),
+(1, 6000, 1500, 'Personal best month', '2024-04-01 00:00:00+00'),
+(1, 7800, 1800, 'Summer fitness peak', '2024-05-01 00:00:00+00'),
+(1, 9200, 1400, 'Maintained momentum', '2024-06-01 00:00:00+00'),
+(1, 10500, 1300, 'CrossFit achievements', '2024-07-01 00:00:00+00'),
+(1, 12000, 1500, 'Record breaking month', '2024-08-01 00:00:00+00'),
+(1, 13200, 1200, 'Consistent progress', '2024-09-01 00:00:00+00'),
+(1, 13850, 650, 'Current standing', '2024-10-01 00:00:00+00');
+
+-- Health Metrics (monthly data for 2 years - 24 months)
+-- Showing gradual improvement in weight, sleep, hydration, and fitness metrics
+INSERT INTO user_health_metrics (user_id, metric_date, weight_kg, sleep_hours, water_intake_ml, steps, heart_rate_avg, workout_minutes, calories_burned, mood_score, stress_level, energy_level) VALUES
+-- Year 1: 2023 Oct-Dec
+(1, '2023-10-15', 85.5, 6.5, 1800, 8500, 75, 30, 350, 6, 6, 6),
+(1, '2023-11-15', 84.8, 6.8, 2000, 9200, 74, 35, 400, 7, 5, 7),
+(1, '2023-12-15', 84.0, 7.0, 2200, 9800, 73, 40, 450, 7, 5, 7),
+-- Year 2: 2024 Jan-Dec
+(1, '2024-01-15', 83.2, 7.2, 2400, 10500, 72, 45, 500, 8, 4, 8),
+(1, '2024-02-15', 82.5, 7.3, 2500, 11000, 71, 50, 550, 8, 4, 8),
+(1, '2024-03-15', 81.8, 7.5, 2600, 11500, 70, 55, 600, 8, 3, 8),
+(1, '2024-04-15', 81.0, 7.5, 2700, 12000, 69, 60, 650, 9, 3, 9),
+(1, '2024-05-15', 80.3, 7.8, 2800, 12500, 68, 65, 700, 9, 3, 9),
+(1, '2024-06-15', 79.8, 8.0, 2900, 13000, 67, 70, 750, 9, 2, 9),
+(1, '2024-07-15', 79.2, 8.0, 3000, 13500, 66, 75, 800, 9, 2, 9),
+(1, '2024-08-15', 78.8, 8.2, 3100, 14000, 65, 80, 850, 10, 2, 10),
+(1, '2024-09-15', 78.5, 8.2, 3200, 14500, 65, 85, 900, 10, 2, 10);
+
+-- User Achievements
+INSERT INTO user_achievements (user_id, achievement_type, achievement_title, achievement_description, achieved_at) VALUES
+(1, 'community_joined', 'Joined Running Club', 'Became a member of the Running Club community', '2023-10-08 10:00:00+00'),
+(1, 'community_joined', 'Joined Yoga & Mindfulness', 'Became a member of Yoga & Mindfulness community', '2023-10-10 11:00:00+00'),
+(1, 'community_joined', 'Joined Fitness Warriors', 'Became a member of Fitness Warriors community', '2023-10-12 12:00:00+00'),
+(1, 'streak', '7-Day Streak', 'Completed daily quests for 7 consecutive days', '2023-10-22 20:00:00+00'),
+(1, 'points_milestone', '1000 Points Milestone', 'Earned your first 1000 points!', '2023-11-28 15:00:00+00'),
+(1, 'quest_completion', 'First Marathon', 'Completed your first marathon event', '2023-11-20 12:00:00+00'),
+(1, 'streak', '30-Day Streak', 'Completed daily quests for 30 consecutive days', '2023-12-15 20:00:00+00'),
+(1, 'points_milestone', '5000 Points Milestone', 'Reached 5000 total points!', '2024-03-10 16:00:00+00'),
+(1, 'quest_completion', '50 Quests Completed', 'Completed 50 quests across all communities', '2024-04-20 14:00:00+00'),
+(1, 'streak', '100-Day Streak', 'Completed daily quests for 100 consecutive days', '2024-05-05 20:00:00+00'),
+(1, 'points_milestone', '10000 Points Milestone', 'Reached 10,000 total points!', '2024-07-15 18:00:00+00'),
+(1, 'quest_completion', '100 Quests Completed', 'Completed 100 quests - true dedication!', '2024-08-30 15:00:00+00');
+
+-- User Preferences (for AI/LLM personalized quest generation)
+INSERT INTO user_preferences (user_id, favorite_activities, fitness_goals, health_conditions, dietary_preferences, available_time_slots, preferred_difficulty) VALUES
+(1, 
+ ARRAY['running', 'yoga', 'strength training', 'HIIT', 'meditation'],
+ ARRAY['lose weight', 'build muscle', 'improve endurance', 'better sleep', 'stress management'],
+ ARRAY['none'],
+ ARRAY['high protein', 'low carb', 'vegetarian friendly'],
+ ARRAY['morning', 'evening'],
+ 'medium'
+);

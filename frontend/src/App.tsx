@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import Quests from './pages/Quests/Quests';
 import Community from './pages/Community/Community';
 import Leaderboards from './pages/Leaderboards/Leaderboards';
+import Journey from './pages/Journey/Journey';
 import { usePoints } from './contexts/PointsContext';
 import Rewards from './pages/Rewards/Rewards';
 import Login from './pages/Auth/Login';
@@ -28,6 +29,7 @@ function App() {
           <Route path="/quests" element={<Quests />} />
           <Route path="/community" element={<Community />} />
           <Route path="/leaderboards" element={<Leaderboards />} />
+          <Route path="/journey" element={<Journey />} />
           <Route path="/rewards" element={<Rewards />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />

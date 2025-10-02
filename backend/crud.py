@@ -89,6 +89,33 @@ class CommunityQuest(BaseModel):
     completed: bool = False
     time_until_event: str = ""
 
+class CommunityPointsBreakdown(BaseModel):
+    community_id: int
+    community_name: str
+    community_color: str
+    community_icon: str
+    total_points: int
+
+class PointsHistoryEntry(BaseModel):
+    date: str
+    total_points: int
+
+class HealthMetric(BaseModel):
+    metric_date: str
+    weight_kg: float | None
+    sleep_hours: float | None
+    water_intake_ml: int | None
+    steps: int | None
+    workout_minutes: int | None
+    mood_score: int | None
+    energy_level: int | None
+
+class Achievement(BaseModel):
+    achievement_title: str
+    achievement_description: str
+    achieved_at: str
+    achievement_type: str
+
 # --- User and Game Data Endpoints ---
 
 @app.get("/user/{user_id}", response_model=User)
@@ -543,6 +570,149 @@ def complete_community_quest(user_id: int, community_quest_id: int):
             return {
                 "message": "Community quest completed successfully",
                 "points_added": quest['points_reward']
+            }
+
+# --- Journey / Analytics Endpoints ---
+
+@app.get("/journey/community-breakdown/{user_id}", response_model=List[CommunityPointsBreakdown])
+def get_community_points_breakdown(user_id: int):
+    """
+    Get total points earned per community for pie chart.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    c.community_id,
+                    c.community_name,
+                    c.community_color,
+                    c.community_icon,
+                    COALESCE(SUM(ucph.points_earned), 0) as total_points
+                FROM communities c
+                LEFT JOIN user_community_points_history ucph 
+                    ON c.community_id = ucph.community_id AND ucph.user_id = %s
+                GROUP BY c.community_id, c.community_name, c.community_color, c.community_icon
+                HAVING COALESCE(SUM(ucph.points_earned), 0) > 0
+                ORDER BY total_points DESC
+            """, (user_id,))
+            return cur.fetchall()
+
+@app.get("/journey/points-timeline/{user_id}", response_model=List[PointsHistoryEntry])
+def get_points_timeline(user_id: int):
+    """
+    Get points progression over time for line chart.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    TO_CHAR(recorded_at, 'YYYY-MM-DD') as date,
+                    total_points
+                FROM user_points_history
+                WHERE user_id = %s
+                ORDER BY recorded_at
+            """, (user_id,))
+            return cur.fetchall()
+
+@app.get("/journey/health-metrics/{user_id}", response_model=List[HealthMetric])
+def get_health_metrics(user_id: int):
+    """
+    Get health metrics over time for progress tracking.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    metric_date::text,
+                    weight_kg,
+                    sleep_hours,
+                    water_intake_ml,
+                    steps,
+                    workout_minutes,
+                    mood_score,
+                    energy_level
+                FROM user_health_metrics
+                WHERE user_id = %s
+                ORDER BY metric_date
+            """, (user_id,))
+            return cur.fetchall()
+
+@app.get("/journey/achievements/{user_id}", response_model=List[Achievement])
+def get_achievements(user_id: int):
+    """
+    Get user achievements and milestones.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    achievement_title,
+                    achievement_description,
+                    achieved_at::text,
+                    achievement_type
+                FROM user_achievements
+                WHERE user_id = %s
+                ORDER BY achieved_at DESC
+            """, (user_id,))
+            return cur.fetchall()
+
+@app.get("/journey/stats/{user_id}")
+def get_journey_stats(user_id: int):
+    """
+    Get overall journey statistics.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get account age
+            cur.execute("""
+                SELECT 
+                    created_at,
+                    EXTRACT(DAY FROM (CURRENT_TIMESTAMP - created_at)) as days_active
+                FROM users 
+                WHERE user_id = %s
+            """, (user_id,))
+            user_data = cur.fetchone()
+            
+            # Get total communities joined
+            cur.execute("""
+                SELECT COUNT(*) as communities_joined
+                FROM user_communities
+                WHERE user_id = %s
+            """, (user_id,))
+            community_count = cur.fetchone()
+            
+            # Get total quests completed
+            cur.execute("""
+                SELECT COUNT(*) as quests_completed
+                FROM user_quests
+                WHERE user_id = %s AND completed_at IS NOT NULL
+            """, (user_id,))
+            quest_count = cur.fetchone()
+            
+            # Get total achievements
+            cur.execute("""
+                SELECT COUNT(*) as achievements_earned
+                FROM user_achievements
+                WHERE user_id = %s
+            """, (user_id,))
+            achievement_count = cur.fetchone()
+            
+            # Get current user stats
+            cur.execute("""
+                SELECT points, streak
+                FROM users
+                WHERE user_id = %s
+            """, (user_id,))
+            current_stats = cur.fetchone()
+            
+            return {
+                "days_active": int(user_data['days_active']) if user_data else 0,
+                "member_since": user_data['created_at'].isoformat() if user_data else None,
+                "communities_joined": community_count['communities_joined'],
+                "quests_completed": quest_count['quests_completed'],
+                "achievements_earned": achievement_count['achievements_earned'],
+                "total_points": current_stats['points'],
+                "current_streak": current_stats['streak']
             }
 
 if __name__ == "__main__":
