@@ -66,6 +66,29 @@ class LeaderboardUser(BaseModel):
     weekly_points: int
     streak: int
 
+class Community(BaseModel):
+    community_id: int
+    community_name: str
+    community_description: str
+    community_color: str
+    community_icon: str
+    member_count: int
+    is_joined: bool = False
+
+class CommunityQuest(BaseModel):
+    community_quest_id: int
+    community_id: int
+    community_name: str
+    community_color: str
+    community_icon: str
+    quest_name: str
+    quest_description: str
+    points_reward: int
+    event_date: str
+    event_end_date: str
+    completed: bool = False
+    time_until_event: str = ""
+
 # --- User and Game Data Endpoints ---
 
 @app.get("/user/{user_id}", response_model=User)
@@ -335,6 +358,192 @@ def claim_reward(user_id: int, reward_id: int):
             )
             conn.commit()
             return {"message": "Reward claimed successfully", "new_points": user['points'] - reward['cost']}
+
+# --- Community Endpoints ---
+
+@app.get("/communities/{user_id}", response_model=List[Community])
+def get_communities(user_id: int):
+    """
+    Retrieves all communities and indicates which ones the user has joined.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    c.community_id,
+                    c.community_name,
+                    c.community_description,
+                    c.community_color,
+                    c.community_icon,
+                    c.member_count,
+                    CASE WHEN uc.user_id IS NOT NULL THEN TRUE ELSE FALSE END as is_joined
+                FROM communities c
+                LEFT JOIN user_communities uc ON c.community_id = uc.community_id AND uc.user_id = %s
+                ORDER BY c.community_name
+            """, (user_id,))
+            return cur.fetchall()
+
+@app.post("/communities/join/{user_id}/{community_id}")
+def join_community(user_id: int, community_id: int):
+    """
+    Allows a user to join a community.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if already joined
+            cur.execute(
+                "SELECT * FROM user_communities WHERE user_id = %s AND community_id = %s",
+                (user_id, community_id)
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail="Already joined this community")
+            
+            # Join community
+            cur.execute(
+                "INSERT INTO user_communities (user_id, community_id) VALUES (%s, %s)",
+                (user_id, community_id)
+            )
+            
+            # Update member count
+            cur.execute(
+                "UPDATE communities SET member_count = member_count + 1 WHERE community_id = %s",
+                (community_id,)
+            )
+            
+            conn.commit()
+            return {"message": "Successfully joined community"}
+
+@app.post("/communities/leave/{user_id}/{community_id}")
+def leave_community(user_id: int, community_id: int):
+    """
+    Allows a user to leave a community.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if actually joined
+            cur.execute(
+                "SELECT * FROM user_communities WHERE user_id = %s AND community_id = %s",
+                (user_id, community_id)
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=400, detail="Not a member of this community")
+            
+            # Leave community
+            cur.execute(
+                "DELETE FROM user_communities WHERE user_id = %s AND community_id = %s",
+                (user_id, community_id)
+            )
+            
+            # Update member count
+            cur.execute(
+                "UPDATE communities SET member_count = member_count - 1 WHERE community_id = %s",
+                (community_id,)
+            )
+            
+            conn.commit()
+            return {"message": "Successfully left community"}
+
+@app.get("/community-quests/{user_id}", response_model=List[CommunityQuest])
+def get_community_quests(user_id: int):
+    """
+    Retrieves all community quests/events for communities the user has joined.
+    Only shows upcoming or current events.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    cq.community_quest_id,
+                    cq.community_id,
+                    c.community_name,
+                    c.community_color,
+                    c.community_icon,
+                    cq.quest_name,
+                    cq.quest_description,
+                    cq.points_reward,
+                    cq.event_date::text,
+                    cq.event_end_date::text,
+                    CASE WHEN ucq.completed_at IS NOT NULL THEN TRUE ELSE FALSE END as completed
+                FROM community_quests cq
+                JOIN communities c ON cq.community_id = c.community_id
+                JOIN user_communities uc ON c.community_id = uc.community_id AND uc.user_id = %s
+                LEFT JOIN user_community_quests ucq ON cq.community_quest_id = ucq.community_quest_id AND ucq.user_id = %s
+                WHERE cq.is_active = TRUE 
+                AND cq.event_end_date >= CURRENT_TIMESTAMP
+                ORDER BY cq.event_date
+            """, (user_id, user_id))
+            
+            quests = cur.fetchall()
+            
+            # Calculate time until event for each quest
+            from datetime import datetime
+            for quest in quests:
+                event_date = datetime.fromisoformat(quest['event_date'])
+                now = datetime.now(event_date.tzinfo)
+                
+                if event_date > now:
+                    delta = event_date - now
+                    days = delta.days
+                    hours = delta.seconds // 3600
+                    minutes = (delta.seconds % 3600) // 60
+                    
+                    if days > 0:
+                        quest['time_until_event'] = f"{days}d {hours}h"
+                    elif hours > 0:
+                        quest['time_until_event'] = f"{hours}h {minutes}m"
+                    else:
+                        quest['time_until_event'] = f"{minutes}m"
+                else:
+                    # Event is happening now
+                    event_end = datetime.fromisoformat(quest['event_end_date'])
+                    if event_end > now:
+                        quest['time_until_event'] = "LIVE NOW"
+                    else:
+                        quest['time_until_event'] = "Ended"
+            
+            return quests
+
+@app.post("/community-quests/complete/{user_id}/{community_quest_id}")
+def complete_community_quest(user_id: int, community_quest_id: int):
+    """
+    Marks a community quest/event as complete for a user and awards points.
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get quest details
+            cur.execute(
+                "SELECT points_reward FROM community_quests WHERE community_quest_id = %s",
+                (community_quest_id,)
+            )
+            quest = cur.fetchone()
+            if not quest:
+                raise HTTPException(status_code=404, detail="Community quest not found")
+            
+            # Check if already completed
+            cur.execute(
+                "SELECT * FROM user_community_quests WHERE user_id = %s AND community_quest_id = %s",
+                (user_id, community_quest_id)
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail="Community quest already completed")
+            
+            # Record completion
+            cur.execute(
+                "INSERT INTO user_community_quests (user_id, community_quest_id, status, completed_at) VALUES (%s, %s, 'completed', CURRENT_TIMESTAMP)",
+                (user_id, community_quest_id)
+            )
+            
+            # Update user points and weekly_points
+            cur.execute(
+                "UPDATE users SET points = points + %s, weekly_points = weekly_points + %s WHERE user_id = %s",
+                (quest['points_reward'], quest['points_reward'], user_id)
+            )
+            
+            conn.commit()
+            return {
+                "message": "Community quest completed successfully",
+                "points_added": quest['points_reward']
+            }
 
 if __name__ == "__main__":
     import uvicorn
