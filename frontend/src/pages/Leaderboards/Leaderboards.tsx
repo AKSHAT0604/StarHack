@@ -1,145 +1,110 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './Leaderboards.css';
-import { usePoints, User } from '../../contexts/PointsContext';
+import { usePoints } from '../../contexts/PointsContext';
 
 const Leaderboards: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overall' | 'weekly' | 'monthly'>('overall');
-  const { users } = usePoints(); // Use users from context
-  
-  // Mock data for weekly and monthly leaderboards
-  // In a real application, you would fetch these from your API
-  const weeklyLeaderboard = [...users].sort((a, b) => b.total_points - a.total_points).map((user, index) => ({
-    ...user,
-    rank: index + 1,
-  }));
-  
-  const monthlyLeaderboard = [...users].sort((a, b) => b.total_points - a.total_points).map((user, index) => ({
-    ...user,
-    rank: index + 1,
-  }));
-  
-  const getCurrentLeaderboard = () => {
-    switch(activeTab) {
-      case 'overall':
-        return users;
-      case 'weekly':
-        return weeklyLeaderboard;
-      case 'monthly':
-        return monthlyLeaderboard;
-      default:
-        return users;
-    }
+  const { leaderboard, user } = usePoints();
+
+  const getAvatar = (username: string) => {
+    return username.substring(0, 2).toUpperCase();
   };
-  
-  const getScoreLabel = () => {
-    return 'Total Points';
-  };
-  
-  const getChangeIcon = (user: User) => {
-    if (!user.previous_rank || user.rank === user.previous_rank) {
-      return <span className="change-icon same">−</span>;
-    } else if (user.rank < user.previous_rank) {
-      return <span className="change-icon up">↑</span>;
-    } else {
-      return <span className="change-icon down">↓</span>;
-    }
-  };
+
+  const currentUserRank = leaderboard.findIndex(u => u.username === 'CurrentUser') + 1;
 
   return (
     <div className="leaderboards">
-      <h1>Leaderboards</h1>
-      
-      <div className="leaderboard-tabs">
-        <button 
-          className={activeTab === 'overall' ? 'active' : ''} 
-          onClick={() => setActiveTab('overall')}
-        >
-          Overall
-        </button>
-        <button 
-          className={activeTab === 'weekly' ? 'active' : ''} 
-          onClick={() => setActiveTab('weekly')}
-        >
-          Weekly
-        </button>
-        <button 
-          className={activeTab === 'monthly' ? 'active' : ''} 
-          onClick={() => setActiveTab('monthly')}
-        >
-          Monthly
-        </button>
+      <h1>Weekly Leaderboards</h1>
+      <p className="leaderboard-subtitle">🏆 Rankings based on points earned this week</p>
+      <p className="leaderboard-info">Top 5 players receive bonus points at week end!</p>
+      <div className="bonus-info">
+        <span className="bonus-item">🥇 1st: +500</span>
+        <span className="bonus-item">🥈 2nd: +300</span>
+        <span className="bonus-item">🥉 3rd: +200</span>
+        <span className="bonus-item">4️⃣ 4th: +100</span>
+        <span className="bonus-item">5️⃣ 5th: +50</span>
       </div>
-      
+
       <div className="leaderboard-container">
         <div className="leaderboard-header">
           <div className="rank-column">Rank</div>
           <div className="name-column">Name</div>
-          <div className="score-column">{getScoreLabel()}</div>
-          <div className="change-column">Change</div>
+          <div className="score-column">Weekly Points</div>
+          <div className="streak-column">Streak</div>
         </div>
-        
+
         <div className="leaderboard-entries">
-          {getCurrentLeaderboard().map(user => (
-            <div key={user.user_id} className={`leaderboard-entry ${user.username === 'CurrentUser' ? 'current-user' : ''}`}>
-              <div className="rank-column">
-                {user.rank <= 3 ? (
-                  <div className={`rank-badge rank-${user.rank}`}>
-                    {user.rank}
+          {leaderboard.map((entry, index) => {
+            const rank = index + 1;
+            const isCurrentUser = entry.username === 'CurrentUser';
+            const isTopFive = rank <= 5;
+            return (
+              <div key={entry.user_id} className={`leaderboard-entry ${isCurrentUser ? 'current-user' : ''} ${isTopFive ? 'top-five' : ''}`}>
+                <div className="rank-column">
+                  {rank <= 3 ? (
+                    <div className={`rank-badge rank-${rank}`}>
+                      {rank}
+                    </div>
+                  ) : rank <= 5 ? (
+                    <div className="rank-badge rank-top5">
+                      {rank}
+                    </div>
+                  ) : (
+                    <span>{rank}</span>
+                  )}
+                </div>
+
+                <div className="name-column">
+                  <div className="avatar">{getAvatar(entry.username)}</div>
+                  <div className="name">
+                    {entry.username}{isCurrentUser && ' (You)'}
+                    {isTopFive && <span className="bonus-badge">🎁</span>}
                   </div>
-                ) : (
-                  <span>{user.rank}</span>
-                )}
+                </div>
+
+                <div className="score-column">{entry.weekly_points.toLocaleString()}</div>
+
+                <div className="streak-column">🔥 {entry.streak}</div>
               </div>
-              
-              <div className="name-column">
-                <div className="avatar">{user.avatar}</div>
-                <div className="name">{user.username}</div>
-              </div>
-              
-              <div className="score-column">{user.total_points.toLocaleString()}</div>
-              
-              <div className="change-column">
-                {getChangeIcon(user)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
-      
-      <div className="your-rank">
-        <h2>Your Rankings</h2>
-        <div className="your-stats">
-          <div className="your-stat-card">
-            <h3>Overall</h3>
-            <div className="stat-value">#{users.find(u => u.username === 'CurrentUser')?.rank || '-'}</div>
-            <div className="stat-label">Your current rank</div>
-            <div className="stat-progress">
-              {(() => {
-                const currentUser = users.find(u => u.username === 'CurrentUser');
-                if (!currentUser || !currentUser.previous_rank) return 'N/A';
-                const difference = currentUser.previous_rank - currentUser.rank;
-                if (difference > 0) return `+${difference} from last week`;
-                if (difference < 0) return `${difference} from last week`;
-                return 'Same as last week';
-              })()}
+
+      {user && (
+        <div className="your-rank">
+          <h2>Your Stats</h2>
+          <div className="your-stats">
+            <div className="your-stat-card">
+              <h3>Weekly Rank</h3>
+              <div className="stat-value">#{currentUserRank || '-'}</div>
+              <div className="stat-label">Your current rank</div>
+              {currentUserRank <= 5 && currentUserRank > 0 && (
+                <div className="bonus-indicator">
+                  🎁 Bonus at week end!
+                </div>
+              )}
+            </div>
+
+            <div className="your-stat-card">
+              <h3>Weekly Points</h3>
+              <div className="stat-value">{user.weekly_points.toLocaleString()}</div>
+              <div className="stat-label">Earned this week</div>
+            </div>
+
+            <div className="your-stat-card">
+              <h3>Total Balance</h3>
+              <div className="stat-value">{user.points.toLocaleString()}</div>
+              <div className="stat-label">Available points</div>
+            </div>
+
+            <div className="your-stat-card">
+              <h3>Streak</h3>
+              <div className="stat-value">🔥 {user.streak}</div>
+              <div className="stat-label">Day streak</div>
             </div>
           </div>
-          
-          <div className="your-stat-card">
-            <h3>Weekly</h3>
-            <div className="stat-value">#{weeklyLeaderboard.find(u => u.username === 'CurrentUser')?.rank || '-'}</div>
-            <div className="stat-label">Your current rank</div>
-            <div className="stat-progress">+3 from last week</div>
-          </div>
-          
-          <div className="your-stat-card">
-            <h3>Monthly</h3>
-            <div className="stat-value">#{monthlyLeaderboard.find(u => u.username === 'CurrentUser')?.rank || '-'}</div>
-            <div className="stat-label">Your current rank</div>
-            <div className="stat-progress">-1 from last month</div>
-          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

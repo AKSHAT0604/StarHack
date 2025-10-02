@@ -5,8 +5,12 @@ CREATE TABLE users (
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     points INTEGER DEFAULT 0,
+    spent_points INTEGER DEFAULT 0,
+    weekly_points INTEGER DEFAULT 0,
+    week_start DATE DEFAULT date_trunc('week', CURRENT_DATE)::date,
     streak INTEGER DEFAULT 0,
     last_login DATE,
+    last_daily_completion DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -28,7 +32,7 @@ CREATE TABLE user_quests (
     quest_id INTEGER REFERENCES quests(quest_id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'incomplete', -- 'incomplete', 'completed'
     completed_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE(user_id, quest_id)
+    reset_at TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE rewards (
@@ -47,13 +51,29 @@ CREATE TABLE user_rewards (
 );
 
 -- Seed initial data
-INSERT INTO users (username, email, points, streak) VALUES ('testuser', 'test@example.com', 100, 5);
+-- Current user (user_id will be 1)
+INSERT INTO users (username, email, points, spent_points, weekly_points, streak, last_login) VALUES 
+('CurrentUser', 'current@example.com', 850, 0, 225, 5, CURRENT_DATE);
+
+-- Other users with random values
+INSERT INTO users (username, email, points, spent_points, weekly_points, streak, last_login) VALUES 
+('JohnDoe', 'john@example.com', 1250, 300, 450, 10, CURRENT_DATE),
+('JaneSmith', 'jane@example.com', 1150, 200, 380, 8, CURRENT_DATE),
+('MikeBrown', 'mike@example.com', 950, 150, 320, 6, CURRENT_DATE),
+('SarahJohnson', 'sarah@example.com', 900, 250, 290, 7, CURRENT_DATE),
+('AlexWong', 'alex@example.com', 800, 100, 260, 4, CURRENT_DATE),
+('EmilyClark', 'emily@example.com', 750, 180, 240, 9, CURRENT_DATE),
+('DavidLee', 'david@example.com', 700, 120, 210, 5, CURRENT_DATE),
+('LisaBrown', 'lisa@example.com', 650, 90, 180, 3, CURRENT_DATE),
+('RobertTaylor', 'robert@example.com', 600, 140, 150, 6, CURRENT_DATE);
 
 INSERT INTO quests (quest_name, quest_description, quest_type, points_reward) VALUES
-('Morning Walk', 'Walk for 15 minutes.', 'daily', 10),
-('Workout Session', 'Complete a 30-minute workout.', 'daily', 20),
-('Weekly Steps Challenge', 'Reach 50,000 steps this week.', 'weekly', 100),
-('Monthly Marathon', 'Run a total of 42km this month.', 'monthly', 500);
+('Take 10,000 steps', 'Walk at least 10,000 steps today', 'daily', 100),
+('Drink 8 glasses of water', 'Stay hydrated throughout the day', 'daily', 50),
+('Meditate for 10 minutes', 'Practice mindfulness meditation', 'daily', 75),
+('Exercise 3 times this week', 'Complete 3 workout sessions', 'weekly', 200),
+('Meal prep for the week', 'Prepare healthy meals', 'weekly', 150),
+('Monthly health check-up', 'Complete your monthly health assessment', 'monthly', 300);
 
 INSERT INTO rewards (reward_name, reward_description, cost) VALUES
 ('10% Gym Discount', 'Get 10% off your next gym membership payment.', 500),

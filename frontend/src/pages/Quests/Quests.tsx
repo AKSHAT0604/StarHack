@@ -6,7 +6,22 @@ type QuestCategory = 'daily' | 'weekly' | 'monthly';
 
 const Quests: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<QuestCategory | null>('daily');
-  const { quests, completeQuest } = usePoints();
+  const { quests, completeQuest, resetQuests, showCongratulations, setShowCongratulations } = usePoints();
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleResetQuests = async () => {
+    if (window.confirm('⚠️ TESTING ONLY: Reset all quests? This will delete all quest completion records.')) {
+      setIsResetting(true);
+      try {
+        await resetQuests();
+        alert('✅ All quests have been reset!');
+      } catch (error) {
+        alert('❌ Failed to reset quests');
+      } finally {
+        setIsResetting(false);
+      }
+    }
+  };
 
   const handleCategoryClick = (category: QuestCategory) => {
     setActiveCategory(activeCategory === category ? null : category);
@@ -40,7 +55,26 @@ const Quests: React.FC = () => {
 
   return (
     <div className="quests">
-      <h1>Quests</h1>
+      {showCongratulations && (
+        <div className="congratulations-overlay">
+          <div className="congratulations-popup">
+            <h2>🎉 Congratulations! 🎉</h2>
+            <p>You've completed all daily quests!</p>
+            <p>Your streak has been increased by 1! 🔥</p>
+            <button onClick={() => setShowCongratulations(false)}>Awesome!</button>
+          </div>
+        </div>
+      )}
+      <div className="quests-header">
+        <h1>Quests</h1>
+        <button 
+          className="reset-button-testing" 
+          onClick={handleResetQuests}
+          disabled={isResetting}
+        >
+          {isResetting ? '🔄 Resetting...' : '🔧 Reset Quests (Testing)'}
+        </button>
+      </div>
       <div className="quest-categories">
         <div className="quest-category-box daily" onClick={() => handleCategoryClick('daily')}>
           <h2>Daily Quests</h2>
