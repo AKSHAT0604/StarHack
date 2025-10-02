@@ -9,6 +9,8 @@ CREATE TABLE users (
     weekly_points INTEGER DEFAULT 0,
     week_start DATE DEFAULT date_trunc('week', CURRENT_DATE)::date,
     streak INTEGER DEFAULT 0,
+    tier VARCHAR(20) DEFAULT 'Bronze', -- Bronze, Silver, Gold, Platinum, Diamond
+    streak_freeze_available BOOLEAN DEFAULT FALSE, -- If user has bought streak freeze
     last_login DATE,
     last_daily_completion DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -358,3 +360,75 @@ INSERT INTO user_preferences (user_id, favorite_activities, fitness_goals, healt
  ARRAY['morning', 'evening'],
  'medium'
 );
+
+-- Store Products Table
+CREATE TABLE store_products (
+    product_id SERIAL PRIMARY KEY,
+    product_name VARCHAR(200) NOT NULL,
+    product_description TEXT,
+    product_category VARCHAR(50), -- 'wellness', 'insurance', 'premium_feature'
+    base_price DECIMAL(10,2) NOT NULL, -- Price in rupees
+    product_icon VARCHAR(50) DEFAULT '🛒',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User Purchases Table
+CREATE TABLE user_purchases (
+    purchase_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES store_products(product_id) ON DELETE CASCADE,
+    original_price DECIMAL(10,2) NOT NULL,
+    discount_applied DECIMAL(5,2) DEFAULT 0, -- Percentage discount
+    final_price DECIMAL(10,2) NOT NULL,
+    user_tier VARCHAR(20), -- Tier at time of purchase
+    purchase_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Store Products Data
+INSERT INTO store_products (product_name, product_description, product_category, base_price, product_icon) VALUES
+-- Wellness Services
+('Nutritionist Consultation (30 min)', 'One-on-one session with certified nutritionist', 'wellness', 1500.00, '🥗'),
+('Nutritionist Consultation (60 min)', 'Extended consultation with meal plan', 'wellness', 2500.00, '🥗'),
+('Personal Trainer (1 Session)', 'Individual training session at gym', 'wellness', 1000.00, '💪'),
+('Personal Trainer (10 Sessions)', 'Package of 10 training sessions', 'wellness', 8500.00, '💪'),
+('Yoga Class (Single)', 'Drop-in yoga class', 'wellness', 500.00, '🧘'),
+('Yoga Class (Monthly)', 'Unlimited yoga classes for 1 month', 'wellness', 3000.00, '🧘'),
+('Gym Membership (Monthly)', 'Full gym access for 1 month', 'wellness', 2000.00, '🏋️'),
+('Gym Membership (Quarterly)', 'Full gym access for 3 months', 'wellness', 5500.00, '🏋️'),
+('Gym Membership (Yearly)', 'Full gym access for 12 months', 'wellness', 18000.00, '🏋️'),
+('Mental Health Counseling', '60-minute session with therapist', 'wellness', 2000.00, '🧠'),
+('Health Checkup (Basic)', 'Basic health screening package', 'wellness', 1500.00, '🏥'),
+('Health Checkup (Comprehensive)', 'Complete health diagnostic package', 'wellness', 5000.00, '🏥'),
+
+-- Insurance Products
+('Health Insurance (Basic)', 'Basic health coverage - 5 Lakh', 'insurance', 8000.00, '🏥'),
+('Health Insurance (Premium)', 'Premium health coverage - 10 Lakh', 'insurance', 15000.00, '🏥'),
+('Life Insurance (Term)', 'Term life insurance - 50 Lakh', 'insurance', 10000.00, '💼'),
+('Accidental Insurance', 'Accidental death & disability cover', 'insurance', 3000.00, '🛡️'),
+('Critical Illness Rider', 'Critical illness coverage addon', 'insurance', 5000.00, '❤️'),
+
+-- Premium Features
+('Streak Freeze', 'Save your streak once - never lose progress!', 'premium_feature', 50.00, '🔥'),
+('Premium Membership (Monthly)', 'Ad-free + exclusive quests + priority support', 'premium_feature', 299.00, '⭐'),
+('Premium Membership (Yearly)', 'Ad-free + exclusive quests + priority support', 'premium_feature', 2999.00, '⭐'),
+('VIP Coach Access', 'Direct chat with wellness coaches', 'premium_feature', 999.00, '👨‍⚕️');
+
+-- Tier Benefits Documentation (for reference)
+-- This helps calculate discounts
+CREATE TABLE tier_benefits (
+    tier_id SERIAL PRIMARY KEY,
+    tier_name VARCHAR(20) UNIQUE NOT NULL,
+    min_streak INTEGER NOT NULL,
+    max_streak INTEGER,
+    discount_percentage DECIMAL(5,2) NOT NULL,
+    tier_color VARCHAR(20),
+    tier_icon VARCHAR(10)
+);
+
+INSERT INTO tier_benefits (tier_name, min_streak, max_streak, discount_percentage, tier_color, tier_icon) VALUES
+('Bronze', 0, 6, 0.00, '#CD7F32', '🥉'),
+('Silver', 7, 29, 5.00, '#C0C0C0', '🥈'),
+('Gold', 30, 89, 10.00, '#FFD700', '🥇'),
+('Platinum', 90, 179, 15.00, '#E5E4E2', '💎'),
+('Diamond', 180, NULL, 20.00, '#B9F2FF', '💠');

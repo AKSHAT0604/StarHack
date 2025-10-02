@@ -43,6 +43,8 @@ class User(BaseModel):
     weekly_points: int
     week_start: date | None = None
     streak: int
+    tier: str = 'Bronze'
+    streak_freeze_available: bool = False
     last_login: date | None = None
     last_daily_completion: date | None = None
 
@@ -714,6 +716,255 @@ def get_journey_stats(user_id: int):
                 "total_points": current_stats['points'],
                 "current_streak": current_stats['streak']
             }
+
+# ============= TIER SYSTEM & STORE ENDPOINTS =============
+
+class StoreProduct(BaseModel):
+    product_id: int
+    product_name: str
+    product_description: str
+    product_category: str
+    base_price: float
+    discounted_price: float
+    discount_percentage: float
+    product_icon: str
+
+class TierInfo(BaseModel):
+    tier_name: str
+    min_streak: int
+    max_streak: int | None
+    discount_percentage: float
+    tier_color: str
+    tier_icon: str
+    current_streak: int
+    next_tier: str | None
+    streaks_to_next_tier: int | None
+
+class PurchaseRequest(BaseModel):
+    product_id: int
+
+def calculate_tier(streak: int) -> str:
+    """Calculate user tier based on streak."""
+    if streak >= 180:
+        return 'Diamond'
+    elif streak >= 90:
+        return 'Platinum'
+    elif streak >= 30:
+        return 'Gold'
+    elif streak >= 7:
+        return 'Silver'
+    else:
+        return 'Bronze'
+
+def get_tier_discount(tier: str) -> float:
+    """Get discount percentage for a tier."""
+    discounts = {
+        'Bronze': 0.0,
+        'Silver': 5.0,
+        'Gold': 10.0,
+        'Platinum': 15.0,
+        'Diamond': 20.0
+    }
+    return discounts.get(tier, 0.0)
+
+@app.get("/user/{user_id}/tier", response_model=TierInfo)
+def get_user_tier(user_id: int):
+    """Get user's current tier information and benefits."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get user streak
+            cur.execute("SELECT streak FROM users WHERE user_id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            streak = user['streak']
+            tier = calculate_tier(streak)
+            
+            # Get tier info
+            cur.execute("""
+                SELECT tier_name, min_streak, max_streak, discount_percentage, tier_color, tier_icon
+                FROM tier_benefits
+                WHERE tier_name = %s
+            """, (tier,))
+            tier_info = cur.fetchone()
+            
+            # Calculate next tier info
+            next_tier = None
+            streaks_to_next = None
+            if tier == 'Bronze':
+                next_tier = 'Silver'
+                streaks_to_next = 7 - streak
+            elif tier == 'Silver':
+                next_tier = 'Gold'
+                streaks_to_next = 30 - streak
+            elif tier == 'Gold':
+                next_tier = 'Platinum'
+                streaks_to_next = 90 - streak
+            elif tier == 'Platinum':
+                next_tier = 'Diamond'
+                streaks_to_next = 180 - streak
+            
+            return {
+                **tier_info,
+                "current_streak": streak,
+                "next_tier": next_tier,
+                "streaks_to_next_tier": streaks_to_next
+            }
+
+@app.get("/store/products/{user_id}", response_model=List[StoreProduct])
+def get_store_products(user_id: int):
+    """Get all store products with user-specific discounted prices."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get user's tier
+            cur.execute("SELECT streak, tier FROM users WHERE user_id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            tier = calculate_tier(user['streak'])
+            discount = get_tier_discount(tier)
+            
+            # Update user's tier in database
+            cur.execute("UPDATE users SET tier = %s WHERE user_id = %s", (tier, user_id))
+            
+            # Get all products
+            cur.execute("""
+                SELECT product_id, product_name, product_description, 
+                       product_category, base_price, product_icon
+                FROM store_products
+                WHERE is_active = TRUE
+                ORDER BY product_category, base_price
+            """)
+            products = cur.fetchall()
+            
+            # Calculate discounted prices
+            result = []
+            for product in products:
+                base_price = float(product['base_price'])
+                discounted_price = base_price * (1 - discount / 100)
+                result.append({
+                    **product,
+                    'base_price': base_price,
+                    'discounted_price': round(discounted_price, 2),
+                    'discount_percentage': discount
+                })
+            
+            return result
+
+@app.post("/store/purchase/{user_id}")
+def purchase_product(user_id: int, purchase: PurchaseRequest):
+    """Process a product purchase."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get user info
+            cur.execute("SELECT streak, tier, streak_freeze_available FROM users WHERE user_id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Get product info
+            cur.execute("""
+                SELECT product_id, product_name, base_price, product_category
+                FROM store_products
+                WHERE product_id = %s AND is_active = TRUE
+            """, (purchase.product_id,))
+            product = cur.fetchone()
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+            
+            # Calculate discount
+            tier = calculate_tier(user['streak'])
+            discount = get_tier_discount(tier)
+            base_price = float(product['base_price'])
+            final_price = base_price * (1 - discount / 100)
+            
+            # Special handling for Streak Freeze
+            if product['product_name'] == 'Streak Freeze':
+                if user['streak_freeze_available']:
+                    raise HTTPException(status_code=400, detail="You already have an active Streak Freeze!")
+                # Grant streak freeze
+                cur.execute("""
+                    UPDATE users 
+                    SET streak_freeze_available = TRUE 
+                    WHERE user_id = %s
+                """, (user_id,))
+            
+            # Record purchase
+            cur.execute("""
+                INSERT INTO user_purchases 
+                (user_id, product_id, original_price, discount_applied, final_price, user_tier)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING purchase_id
+            """, (user_id, purchase.product_id, base_price, discount, final_price, tier))
+            
+            purchase_id = cur.fetchone()['purchase_id']
+            
+            return {
+                "success": True,
+                "purchase_id": purchase_id,
+                "product_name": product['product_name'],
+                "original_price": base_price,
+                "discount_applied": discount,
+                "final_price": round(final_price, 2),
+                "message": f"Successfully purchased {product['product_name']}!"
+            }
+
+@app.post("/user/{user_id}/use-streak-freeze")
+def use_streak_freeze(user_id: int):
+    """Use streak freeze to prevent streak loss."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if user has streak freeze available
+            cur.execute("""
+                SELECT streak_freeze_available, streak 
+                FROM users 
+                WHERE user_id = %s
+            """, (user_id,))
+            user = cur.fetchone()
+            
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            if not user['streak_freeze_available']:
+                raise HTTPException(status_code=400, detail="No Streak Freeze available! Purchase one from the store.")
+            
+            # Use the streak freeze (consume it)
+            cur.execute("""
+                UPDATE users 
+                SET streak_freeze_available = FALSE,
+                    last_daily_completion = CURRENT_DATE
+                WHERE user_id = %s
+            """, (user_id,))
+            
+            return {
+                "success": True,
+                "message": "Streak Freeze used! Your streak is protected.",
+                "current_streak": user['streak']
+            }
+
+@app.get("/user/{user_id}/purchases")
+def get_user_purchases(user_id: int):
+    """Get user's purchase history."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT 
+                    up.purchase_id,
+                    sp.product_name,
+                    sp.product_category,
+                    up.original_price,
+                    up.discount_applied,
+                    up.final_price,
+                    up.user_tier,
+                    up.purchase_date
+                FROM user_purchases up
+                JOIN store_products sp ON up.product_id = sp.product_id
+                WHERE up.user_id = %s
+                ORDER BY up.purchase_date DESC
+            """, (user_id,))
+            return cur.fetchall()
 
 if __name__ == "__main__":
     import uvicorn

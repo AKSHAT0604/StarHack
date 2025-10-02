@@ -25,6 +25,8 @@ export interface User {
   weekly_points: number;
   week_start?: string;
   streak: number;
+  tier: string;
+  streak_freeze_available: boolean;
   last_login?: string;
   last_daily_completion?: string;
 }

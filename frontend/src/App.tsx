@@ -7,6 +7,7 @@ import Quests from './pages/Quests/Quests';
 import Community from './pages/Community/Community';
 import Leaderboards from './pages/Leaderboards/Leaderboards';
 import Journey from './pages/Journey/Journey';
+import Store from './pages/Store/Store';
 import { usePoints } from './contexts/PointsContext';
 import Rewards from './pages/Rewards/Rewards';
 import Login from './pages/Auth/Login';
@@ -21,6 +22,7 @@ function App() {
       <div className="points-display">
         <p>Points: {user?.points ?? 0}</p>
         <p>Streak: 🔥{user?.streak ?? 0}</p>
+        {user?.tier && <p>Tier: {user.tier}</p>}
       </div>
       <main className="content">
         <Routes>
@@ -30,6 +32,7 @@ function App() {
           <Route path="/community" element={<Community />} />
           <Route path="/leaderboards" element={<Leaderboards />} />
           <Route path="/journey" element={<Journey />} />
+          <Route path="/store" element={<Store />} />
           <Route path="/rewards" element={<Rewards />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />
