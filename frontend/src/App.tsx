@@ -8,6 +8,8 @@ import Community from './pages/Community/Community';
 import Leaderboards from './pages/Leaderboards/Leaderboards';
 import { usePoints } from './contexts/PointsContext';
 import Rewards from './pages/Rewards/Rewards';
+import Login from './pages/Auth/Login';
+import SignUp from './pages/Auth/SignUp';
 
 function App() {
   const { user } = usePoints();
@@ -27,6 +29,8 @@ function App() {
           <Route path="/community" element={<Community />} />
           <Route path="/leaderboards" element={<Leaderboards />} />
           <Route path="/rewards" element={<Rewards />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<SignUp />} />
         </Routes>
       </main>
     </div>
